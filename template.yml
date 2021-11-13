@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Async invoke a StepFunctions state machine from a Lambda function
+
+Globals:
+  Function:
+    MemorySize: 1024
+    Architectures: ["arm64"]
+    Handler: bootstrap
+    Runtime: provided.al2
+    Timeout: 30
+    Environment:
+      Variables:
+        RUST_BACKTRACE: 1
+        RUST_LOG: info
+
+Resources:
+##########################################################################
+#   STEP FUNCTION                                                        #
+##########################################################################
+  MyStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      DefinitionUri: statemachine/stateMachine.asl.json
+      Type: EXPRESS
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - "cloudwatch:*"
+                - "logs:*"
+              Resource: "*"
+      Logging:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt MyStateMachineLogGroup.Arn
+        IncludeExecutionData: false
+        Level: 'ALL'
+
+##########################################################################
+#  STEP FUNCTION LOG GROUP                                               #
+##########################################################################
+  MyStateMachineLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join [ "/", [ "stepfunctions", MyStateMachine]]
+
+##########################################################################
+#   SQS                                                                  #
+##########################################################################
+  InputSqsQueue:
+    Type: AWS::SQS::Queue
+
+##########################################################################
+#   Lambda Function                                                      #
+##########################################################################
+  LambdaProxy:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: build/handler/
+      Events:
+        MySQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt InputSqsQueue.Arn
+            BatchSize: 10
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - 'states:StartExecution'
+              Resource:
+                - !Ref MyStateMachine
+      Environment:
+        Variables:
+          STATE_MACHINE_ARN: !GetAtt MyStateMachine.Arn
+
+Outputs:
+  MyStateMachine:
+    Value: !Ref MyStateMachine
+    Description: MyStateMachine Arn
+
+  LambdaFuncton:
+    Value: !Ref LambdaProxy
+    Description: Lambda Function ARN
