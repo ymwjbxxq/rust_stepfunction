@@ -36,11 +36,11 @@ pub async fn execute(client: &AWSClient, event: SqsEvent, _ctx: Context) -> Resu
   let mut tasks = Vec::with_capacity(event.records.len());
     let shared_client = Arc::from(client.clone());
     for record in event.records.into_iter() {
-      let _shared_client = Arc::clone(&shared_client);
+      let shared_client = Arc::clone(&shared_client);
       tasks.push(tokio::spawn(async move {
         if let Some(body) = &record.body {
           let request: Request = serde_json::from_str(&body).unwrap();
-          let result = start_stepfunction(&_shared_client, request).await;
+          let result = start_stepfunction(&shared_client, request).await;
           if result.is_err() {
             log::error!("Error: {:?}", result.err().unwrap());
           }
